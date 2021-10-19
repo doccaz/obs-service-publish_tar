@@ -153,7 +153,7 @@ def generate_changelog(project):
         for g in files:
             if ".changes" in g:
                 filecontent = get_file(project, f, g)
-                header = f"\n\n\n*=*=*=*=*=*=*=*=*=*=*=*[ changelog de {f} ]*=*=*=*=*=*=*=*=*=*=*=*\n\n"
+                header = f"\n\n\n*=*=*=*=*=*=*=*=*=*=*=*[ changelog: {f} ]*=*=*=*=*=*=*=*=*=*=*=*\n\n"
                 changelog += header
                 changelog += f"{filecontent}"
                 
