@@ -1,0 +1,52 @@
+<service name="publish_tar">
+	<summary>OBS Source Service to package the published repository as a tarball, compressed with the specified method (default to "gz"), containing the published repository.</summary> 
+
+	<description>This service creates a tarball with all the aggregated packages from the published repository, and creates a filename.tar.[compression format] to be synchronized with another server.</description>
+	<parameter name="destinationpath">
+		<description>Choose the destination path (inside the generated tarball). Default: /srv/www/htdocs</description>
+	</parameter>
+	<parameter name="archive">
+		<description>Specify the destination archive name that will be created. Values: app-x.y.z.tar.gz. Default: None, will use autodetection</description>
+	</parameter>
+	<parameter name="compression">
+		<description>Specify the tarball compression method. When using "tar" no compression is applied. Default: "gz".</description>
+		<allowedvalue>none</allowedvalue>
+		<allowedvalue>gz</allowedvalue>
+		<allowedvalue>bz2</allowedvalue>
+		<allowedvalue>xz</allowedvalue>
+		<required/>
+	</parameter>
+	<parameter name="changesgenerate">
+		<description>Specify whether to generate an automatic changes log. Default: disable</description>
+    <allowedvalue>enable</allowedvalue>
+		<allowedvalue>disable</allowedvalue>
+	</parameter>
+	<parameter name="sourceproject">
+		<description>Specify the source project. Example: openSUSE:Leap:15.3 </description>
+		<required/>
+	</parameter>
+  <parameter name="repository">
+    <description>Specify the repository. Example: openSUSE_Leap_15.3 </description>
+    <required/>
+  </parameter>
+
+  <parameter name="publish_url">
+    <description>Specify the destination RSYNC repository. Example: rsync://myserver/reposync/update-archives/ </description>
+    <required/>
+  </parameter>
+
+    <parameter name="obs_server">
+    <description>Specify the OBS API server to connect to. Example: myserver </description>
+    <required/>
+  </parameter>
+
+    <parameter name="obs_user">
+    <description>Specify the user for connecting to the OBS API. Example: myuser </description>
+    <required/>
+  </parameter>
+
+    <parameter name="obs_password">
+    <description>Specify the password for the OBS API user. Example: mypassword </description>
+    <required/>
+  </parameter>
+</service>

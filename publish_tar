@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+#
+# An OBS Source Service to package the published repository as a tarball file
+# and publish it to another server.
+# (C) 2021 SUSE LLC
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+# See http://www.gnu.org/licenses/gpl-2.0.html for full license text.
+#
+"""\
+OBS Source Service to package the published repository as a tarball, compressed with
+the specified method (default to "gz"), containing the published repository.
+
+See README.md for additional documentation.
+"""
+
+import logging
+import argparse
+import tarfile
+import os
+import urllib3
+import xml.etree.ElementTree as ET
+from datetime import datetime
+from subprocess import check_output
+from subprocess import CalledProcessError
+
+app_name = "obs-service-publish_tar"
+
+description = __doc__
+
+logging.basicConfig(level=logging.DEBUG)
+log = logging.getLogger(app_name)
+
+DEFAULT_COMPRESSION = "gz"
+
+parser = argparse.ArgumentParser(
+    description=description, formatter_class=argparse.RawDescriptionHelpFormatter
+)
+parser.add_argument("--destinationpath", default="srv/www/htdocs")
+parser.add_argument("--archive")
+parser.add_argument("--outdir")
+parser.add_argument("--compression")
+parser.add_argument("--changesgenerate", default="disable")
+parser.add_argument("--sourceproject")
+parser.add_argument("--repository")
+parser.add_argument("--publish_url")
+parser.add_argument("--obs_server")
+parser.add_argument("--obs_user")
+parser.add_argument("--obs_password")
+args = parser.parse_args()
+
+destinationpath = args.destinationpath.lstrip('/')
+outdir = args.outdir
+if args.changesgenerate == "enable":
+    changes_generate = True
+else:
+    changes_generate = False
+
+sourceproject = args.sourceproject
+repository = args.repository
+compression = args.compression
+publish_url = args.publish_url
+archive = args.archive
+obs_server = args.obs_server
+obs_user = args.obs_user
+obs_password = args.obs_password
+    
+if '%d' in archive:
+    archive=archive.replace('%d', datetime.now().strftime('%Y-%m-%d'))
+    
+log.info(f"Using archive {archive}")
+http = urllib3.PoolManager()
+
+### reset uid/gid to 0/0 (root).
+def reset(tarinfo):
+    tarinfo.uid = tarinfo.gid = 0
+    tarinfo.uname = tarinfo.gname = "root"
+    return tarinfo
+
+def run_cmd(cmd, dir):
+    try:
+        log.info(f"executing command: {cmd} on directory {dir}")
+        cwd = os.getcwd()
+        output = check_output(cmd, cwd=dir, shell=True).decode("utf-8").strip()
+        if output:
+            log.info(output)
+        os.chdir(cwd)
+
+    except CalledProcessError as e:
+        error = e.output.decode("utf-8").strip()
+        if error:
+            log.info(error)
+        os.chdir(cwd)
+        raise
+    
+def get_packages(project_name):
+    try:
+        headers = urllib3.make_headers(basic_auth=obs_user + ':' + obs_password)
+        r = http.request('GET', 'https://' + obs_server + '/source/' + project_name, headers=headers)
+    except Exception as e:
+            raise ConnectionAbortedError('Error connecting to OBS API: ' + str(e))
+
+    packagelist = []
+    if r.status == 200:
+        tree = ET.XML(r.data)
+        for f in tree.findall('entry/[@name]'):
+            packagelist.append(f.attrib['name'])
+    else:
+        raise ConnectionAbortedError('error received from OBS API server: ' + str(r.status))
+    return packagelist
+
+def get_filelist(project_name, package_name):
+    try:
+        headers = urllib3.make_headers(basic_auth=obs_user + ':' + obs_password)
+        r = http.request('GET', 'https://' + obs_server + '/source/' + project_name + '/' + package_name, headers=headers)
+    except Exception as e:
+            raise ConnectionAbortedError('Error connecting to OBS API: ' + str(e))
+
+    filelist = []
+    if r.status == 200:
+        tree = ET.XML(r.data)
+        for f in tree.findall('entry/[@name]'):
+            filelist.append(f.attrib['name'])
+    else:
+        raise ConnectionAbortedError('error received from OBS API server: ' + str(r.status))
+    return filelist
+
+def get_file(project_name, package_name, file_name):
+    try:
+        headers = urllib3.make_headers(basic_auth=obs_user + ':' + obs_password)
+        r = http.request('GET', 'https://' + obs_server + '/source/' + project_name + '/' + package_name + '/' + file_name, headers=headers)
+    except Exception as e:
+            raise ConnectionAbortedError('Error connecting to OBS API: ' + str(e))
+
+    filecontents = ""
+    if r.status == 200:
+        filecontents = r.data
+    else:
+        raise ConnectionAbortedError('error received from OBS API server: ' + str(r.status))
+    return filecontents.decode('utf-8')
+
+def generate_changelog(project):
+    packages = get_packages(project)
+    print(f"pacotes: ", packages)
+    
+    changelog = ""
+    for f in packages:
+        files = get_filelist(project, f)
+        print(f"arquivos para pacote {f}: {files}")
+        for g in files:
+            if ".changes" in g:
+                filecontent = get_file(project, f, g)
+                header = f"\n\n\n*=*=*=*=*=*=*=*=*=*=*=*[ changelog de {f} ]*=*=*=*=*=*=*=*=*=*=*=*\n\n"
+                changelog += header
+                changelog += f"{filecontent}"
+                
+    return changelog
+                
+
+def main():
+    
+    # urllib object
+    urllib3.disable_warnings()
+    
+    log.info(f"Running OBS Source Service: {app_name}")
+
+    log.info(f"Destination path: {destinationpath}, outdir: {outdir}")
+    log.info(f"Source project: {sourceproject}, generate changes: {changes_generate}")
+    log.info(f"Repository: {repository}")
+    workdir = outdir + '/../tmp/'
+    contentdir = os.path.join(workdir, destinationpath)
+    sourcedir = os.path.join('/srv/obs/repos/' + sourceproject.replace(':', ':/'), repository)
+
+    try:
+        os.makedirs(workdir, mode=0o775)
+        os.chdir(workdir)
+        os.makedirs(destinationpath, mode=0o775)
+        
+        out_file = os.path.join(outdir, archive)
+
+        try:
+            run_cmd(["/bin/cp  -av " + sourcedir + "/{noarch,x86_64,repodata} ."], contentdir)
+        except CalledProcessError:
+            log.error(f"Error while creating content hardlinks")
+            exit(1)
+                
+        log.info(f"Creating archive as {out_file}, compression is {compression}")
+        log.info(f"Files will be taken from {workdir}")
+        
+        ### generate the changelog
+        if changes_generate:
+            basename = archive.split('.')[0]
+            log.info(f"Creating project changelog")
+            changelog = generate_changelog(sourceproject)
+            with open(os.path.join(contentdir, basename + '.changelog'), 'w') as f:
+                f.write(changelog)
+            f.close()
+            
+        ### create archive
+        with tarfile.open(out_file, 'w:' + compression) as tar_handle:
+            tar_handle.add(destinationpath, recursive=True, filter=reset)
+
+        log.info(f"Created archive at {tar_handle.name}")
+        tar_handle.close()    
+        
+                
+        try:
+            run_cmd(["mkdir -p update-archives"], '/srv/obs/repos')
+            run_cmd(["cp  -av " + out_file + " .",], '/srv/obs/repos/update-archives/')
+        except CalledProcessError:
+            log.error(f"Error while copying tarfile to repo")
+            exit(1)
+
+        try:            
+            run_cmd(['/usr/bin/rsync -ar0 --timeout 7200 /srv/obs/repos/update-archives/ ' + publish_url + '/'], '.')
+        except CalledProcessError:
+            log.error(f"Error while syncing files to {publish_url}")
+            exit(1)
+        
+    except Exception as e:
+        log.error(f"Error while trying to create archive: {e}")
+        exit(1)
+
+
+if __name__ == "__main__":
+    main()
