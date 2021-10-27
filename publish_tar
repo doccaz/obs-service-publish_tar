@@ -199,6 +199,10 @@ def main():
                 f.write(changelog)
             f.close()
             
+            with open(os.path.join(outdir, basename + '.changelog'), 'w') as f:
+                f.write(changelog)
+            f.close()
+            
         ### create archive
         with tarfile.open(out_file, 'w:' + compression) as tar_handle:
             tar_handle.add(destinationpath, recursive=True, filter=reset)
