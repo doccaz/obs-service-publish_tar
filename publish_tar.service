@@ -18,7 +18,12 @@
 	</parameter>
 	<parameter name="changesgenerate">
 		<description>Specify whether to generate an automatic changes log. Default: disable</description>
-    <allowedvalue>enable</allowedvalue>
+    	<allowedvalue>enable</allowedvalue>
+		<allowedvalue>disable</allowedvalue>
+	</parameter>
+	<parameter name="keeplatest">
+		<description>Specify whether to only include the latest versions of packages in the tarball. Default: disable</description>
+    	<allowedvalue>enable</allowedvalue>
 		<allowedvalue>disable</allowedvalue>
 	</parameter>
 	<parameter name="sourceproject">
