@@ -22,10 +22,13 @@ import argparse
 import tarfile
 import os
 import urllib3
+import re
 import xml.etree.ElementTree as ET
+import glob
 from datetime import datetime
 from subprocess import check_output
 from subprocess import CalledProcessError
+import packaging.version as v
 
 app_name = "obs-service-publish_tar"
 
@@ -35,6 +38,9 @@ logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(app_name)
 
 DEFAULT_COMPRESSION = "gz"
+
+include_list = []
+exclude_list = []
 
 parser = argparse.ArgumentParser(
     description=description, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -50,6 +56,7 @@ parser.add_argument("--publish_url")
 parser.add_argument("--obs_server")
 parser.add_argument("--obs_user")
 parser.add_argument("--obs_password")
+parser.add_argument("--keeplatest")
 args = parser.parse_args()
 
 destinationpath = args.destinationpath.lstrip('/')
@@ -58,6 +65,11 @@ if args.changesgenerate == "enable":
     changes_generate = True
 else:
     changes_generate = False
+
+if args.keeplatest == "true":
+    keeplatest = True
+else:
+    keeplatest = False
 
 sourceproject = args.sourceproject
 repository = args.repository
@@ -74,10 +86,60 @@ if '%d' in archive:
 log.info(f"Using archive {archive}")
 http = urllib3.PoolManager()
 
+def create_exclude_list(repopath):
+
+	regex = r'(.*)-(.*)-(.*?.*)\.(noarch|x86_64|src)\.(rpm|drpm)'
+
+	files=glob.glob(repopath + '/**/*rpm')
+	packages = [os.path.basename(x) for x in files]
+	include = []
+	exclude = []
+	versions = {}
+	# print(f'total packages: {len(packages)}')
+	for item in packages:
+		matches = re.search(regex, item)
+		package = matches.group(1)
+		version = matches.group(2)
+		release = matches.group(3)
+		if package in versions.keys():
+			versions[package].append(v.parse(version + '-' + release))
+		else:
+			versions[package] = [v.parse(version + '-' + release)]
+		versions[package].sort(reverse=True)
+
+	for item in packages:
+		matches = re.search(regex, item)
+		package = matches.group(1)
+		version = matches.group(2)
+		release = matches.group(3)
+		arch = matches.group(4)
+		type = matches.group(5)
+		if '.drpm' in item or '.src.rpm' in item:
+			# print(f'excluding DRPM/SRC item: {item}')
+			exclude.append(item)
+		elif item not in exclude and package in versions.keys() and v.parse(version + '-' + release) == versions[package][0]:
+			# print(f'including item: {item}')
+			include.append(item)
+		else:
+			# print(f'excluding item: {item}')
+			exclude.append(item)
+
+	include.sort()
+	exclude.sort()
+	print(f'----total packages: {len(packages)}')
+	print(f'----excluded: {len(exclude)}')
+	print(f'----included: {len(include)}')
+
+	return include, exclude
+
 ### reset uid/gid to 0/0 (root).
 def reset(tarinfo):
+    global exclude_list
     tarinfo.uid = tarinfo.gid = 0
     tarinfo.uname = tarinfo.gname = "root"
+    if tarinfo.isreg() and os.path.basename(tarinfo.name) in exclude_list:
+        # print(f'excluding {tarinfo.name} from the tarball')
+        return None
     return tarinfo
 
 def run_cmd(cmd, dir):
@@ -161,6 +223,8 @@ def generate_changelog(project):
                 
 
 def main():
+    global include_list
+    global exclude_list
     
     # urllib object
     urllib3.disable_warnings()
@@ -202,7 +266,10 @@ def main():
             with open(os.path.join(outdir, basename + '.changelog'), 'w') as f:
                 f.write(changelog)
             f.close()
-            
+        
+        ### create exclusion lists
+        include_list, exclude_list = create_exclude_list(destinationpath)
+        
         ### create archive
         with tarfile.open(out_file, 'w:' + compression) as tar_handle:
             tar_handle.add(destinationpath, recursive=True, filter=reset)
