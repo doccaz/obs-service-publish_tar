@@ -21,6 +21,7 @@ import logging
 import argparse
 import tarfile
 import os
+from xml.etree.ElementInclude import include
 import urllib3
 import re
 import xml.etree.ElementTree as ET
@@ -126,9 +127,9 @@ def create_exclude_list(repopath):
 
 	include.sort()
 	exclude.sort()
-	print(f'----total packages: {len(packages)}')
-	print(f'----excluded: {len(exclude)}')
-	print(f'----included: {len(include)}')
+	log.info(f'----total packages: {len(packages)}')
+	log.info(f'----excluded: {len(exclude)}')
+	log.info(f'----included: {len(include)}')
 
 	return include, exclude
 
@@ -142,7 +143,7 @@ def reset(tarinfo):
         return None
     return tarinfo
 
-def run_cmd(cmd, dir):
+def run_cmd(cmd, dir='.'):
     try:
         log.info(f"executing command: {cmd} on directory {dir}")
         cwd = os.getcwd()
@@ -206,12 +207,12 @@ def get_file(project_name, package_name, file_name):
 
 def generate_changelog(project):
     packages = get_packages(project)
-    print(f"pacotes: ", packages)
+    log.info(f"pacotes: {packages}")
     
     changelog = ""
     for f in packages:
         files = get_filelist(project, f)
-        print(f"arquivos para pacote {f}: {files}")
+        log.info(f"arquivos para pacote {f}: {files}")
         for g in files:
             if ".changes" in g:
                 filecontent = get_file(project, f, g)
@@ -220,7 +221,6 @@ def generate_changelog(project):
                 changelog += f"{filecontent}"
                 
     return changelog
-                
 
 def main():
     global include_list
@@ -245,11 +245,6 @@ def main():
         
         out_file = os.path.join(outdir, archive)
 
-        try:
-            run_cmd(["/bin/cp  -av " + sourcedir + "/{noarch,x86_64,repodata} ."], contentdir)
-        except CalledProcessError:
-            log.error(f"Error while creating content hardlinks")
-            exit(1)
                 
         log.info(f"Creating archive as {out_file}, compression is {compression}")
         log.info(f"Files will be taken from {workdir}")
@@ -267,11 +262,25 @@ def main():
                 f.write(changelog)
             f.close()
         
+        try:
+            if keeplatest:
+                run_cmd(["/bin/cp -av " + sourcedir + "/{noarch,x86_64} ."], contentdir)
+            else:
+                run_cmd(["/bin/cp -av " + sourcedir + "/{noarch,x86_64,repodata} ."], contentdir)
+        except CalledProcessError:
+            log.error(f"Error while copying content to {contentdir}")
+            exit(1)
+            
         ### create exclusion lists
         if keeplatest:
-            include_list, exclude_list = create_exclude_list(destinationpath)
-        
+            include_list, exclude_list = create_exclude_list(contentdir)
+            for item in exclude_list:
+                run_cmd(["find " + contentdir +  " -type f -name " + item + " -delete"])
+            run_cmd(["rm -rf repodata"], contentdir)
+            run_cmd(["/usr/bin/createrepo " + contentdir + " 2>&1"], contentdir)
+                           
         ### create archive
+        os.chdir(workdir)
         with tarfile.open(out_file, 'w:' + compression) as tar_handle:
             tar_handle.add(destinationpath, recursive=True, filter=reset)
 
