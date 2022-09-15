@@ -1,5 +1,5 @@
 <service name="publish_tar">
-	<summary>OBS Source Service to package the published repository as a tarball, compressed with the specified method (default to "gz"), containing the published repository.</summary> 
+	<summary>OBS Source Service to package the published repository as a tarball, compressed with the specified method (default to "gz"), containing the published repository.</summary>
 
 	<description>This service creates a tarball with all the aggregated packages from the published repository, and creates a filename.tar.[compression format] to be synchronized with another server.</description>
 	<parameter name="destinationpath">
@@ -18,40 +18,43 @@
 	</parameter>
 	<parameter name="changesgenerate">
 		<description>Specify whether to generate an automatic changes log. Default: disable</description>
-    	<allowedvalue>enable</allowedvalue>
+		<allowedvalue>enable</allowedvalue>
 		<allowedvalue>disable</allowedvalue>
 	</parameter>
 	<parameter name="keeplatest">
 		<description>Specify whether to only include the latest versions of packages in the tarball. Default: disable</description>
-    	<allowedvalue>enable</allowedvalue>
+		<allowedvalue>enable</allowedvalue>
 		<allowedvalue>disable</allowedvalue>
+	</parameter>
+	<parameter name="extrapackages">
+		<description>Specify a file with a list of URLs for external packages to be added to the final archive.</description>
 	</parameter>
 	<parameter name="sourceproject">
 		<description>Specify the source project. Example: openSUSE:Leap:15.3 </description>
 		<required/>
 	</parameter>
-  <parameter name="repository">
-    <description>Specify the repository. Example: openSUSE_Leap_15.3 </description>
-    <required/>
-  </parameter>
+	<parameter name="repository">
+		<description>Specify the repository. Example: openSUSE_Leap_15.3 </description>
+		<required/>
+	</parameter>
 
-  <parameter name="publish_url">
-    <description>Specify the destination RSYNC repository. Example: rsync://myserver/reposync/update-archives/ </description>
-    <required/>
-  </parameter>
+	<parameter name="publish_url">
+		<description>Specify the destination RSYNC repository. Example: rsync://myserver/reposync/update-archives/ </description>
+		<required/>
+	</parameter>
 
-    <parameter name="obs_server">
-    <description>Specify the OBS API server to connect to. Example: myserver </description>
-    <required/>
-  </parameter>
+	<parameter name="obs_server">
+		<description>Specify the OBS API server to connect to. Example: myserver </description>
+		<required/>
+	</parameter>
 
-    <parameter name="obs_user">
-    <description>Specify the user for connecting to the OBS API. Example: myuser </description>
-    <required/>
-  </parameter>
+	<parameter name="obs_user">
+		<description>Specify the user for connecting to the OBS API. Example: myuser </description>
+		<required/>
+	</parameter>
 
-    <parameter name="obs_password">
-    <description>Specify the password for the OBS API user. Example: mypassword </description>
-    <required/>
-  </parameter>
+	<parameter name="obs_password">
+		<description>Specify the password for the OBS API user. Example: mypassword </description>
+		<required/>
+	</parameter>
 </service>

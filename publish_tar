@@ -30,6 +30,10 @@ from datetime import datetime
 from subprocess import check_output
 from subprocess import CalledProcessError
 import packaging.version as v
+import pycurl
+import urllib.parse
+from io import BytesIO
+
 
 app_name = "obs-service-publish_tar"
 
@@ -39,6 +43,9 @@ logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(app_name)
 
 DEFAULT_COMPRESSION = "gz"
+
+connect_timeout = 20    # max time in seconds for connecting
+download_timeout = 20   # max time without receiving data to cancel the download
 
 include_list = []
 exclude_list = []
@@ -58,6 +65,8 @@ parser.add_argument("--obs_server")
 parser.add_argument("--obs_user")
 parser.add_argument("--obs_password")
 parser.add_argument("--keeplatest", default="disable")
+parser.add_argument("--extrapackages")
+
 args = parser.parse_args()
 
 destinationpath = args.destinationpath.lstrip('/')
@@ -72,6 +81,7 @@ if args.keeplatest == "enable":
 else:
     keeplatest = False
 
+extrapackages = args.extrapackages
 sourceproject = args.sourceproject
 repository = args.repository
 compression = args.compression
@@ -205,6 +215,10 @@ def get_file(project_name, package_name, file_name):
         raise ConnectionAbortedError('error received from OBS API server: ' + str(r.status))
     return filecontents.decode('utf-8')
 
+def download_extrapackages(manifest):
+    
+    return
+
 def generate_changelog(project):
     packages = get_packages(project)
     log.info(f"pacotes: {packages}")
@@ -222,6 +236,86 @@ def generate_changelog(project):
                 
     return changelog
 
+
+def download_url(url, filename=None, spider=False, force=False):
+    status_code = -1
+    bytes_size = -1
+    fd = None
+    log.info(f"tipo = {type(url)}")
+    try:
+        data = BytesIO()
+        c = pycurl.Curl()
+        c.setopt(pycurl.URL, str(url))
+        c.setopt(pycurl.CONNECTTIMEOUT, connect_timeout)            # timeout for connecting
+        c.setopt(pycurl.LOW_SPEED_TIME, download_timeout)           # timeout for receiving data
+        c.setopt(pycurl.VERBOSE, 0)
+        c.setopt(c.NOPROGRESS, 1)                                   # disable progress callbacks
+        c.setopt(pycurl.NOBODY,1)                                   # only looks for the size of the file (HEAD)
+        c.setopt(pycurl.SSL_VERIFYPEER, 0)                          # do not verify server certificates
+        c.setopt(pycurl.SSL_VERIFYHOST, 0)                          # ignore self-signed certificates
+        c.perform()
+        status_code = c.getinfo(c.RESPONSE_CODE)
+        bytes_size = int(c.getinfo(c.CONTENT_LENGTH_DOWNLOAD))
+        
+        # if "spider" was requested, return now
+        if spider: 
+            log.info('[spider]: %s  status: %d (%d bytes)' % (url, status_code, bytes_size))
+            return status_code, bytes_size
+        else:
+            c.setopt(pycurl.NOBODY, 0)                              # now we download the full file
+            
+        if filename is None:
+            c.setopt(c.WRITEFUNCTION, data.write)                   # no file, return contents in memory
+        else:
+            # if the file already exists...
+            if os.path.exists(filename):
+                file_size = os.path.getsize(filename)
+                if (file_size == bytes_size) and force is False:
+                    log.info('[OK] file %s was already downloaded completely (%d bytes).' % (url, bytes_size))
+                    return status_code, None
+                    
+            fd = open(filename, 'wb')
+            c.setopt(c.WRITEFUNCTION, fd.write)
+            data = None
+
+        if status_code == 404:
+            log.info('[ERROR] file %s does not exist on the server' % url)
+            fd.close()
+            os.remove(filename)
+            return status_code, None
+        
+        # do the download
+        log.info('* initiating download: %s (%d bytes)' % (url, bytes_size))
+        c.perform()
+        if fd is not None:
+            fd.close()
+        total_time = int(c.getinfo(c.TOTAL_TIME))
+        c.close()   
+        log.info('[OK] download successful: %s status: %d (%d bytes, %s seconds)' % (url, status_code, bytes_size, total_time))
+            
+    except pycurl.error as e:
+        if e.args[0] == pycurl.E_COULDNT_CONNECT:
+            errmsg = 'connection error'
+        if e.args[0] == pycurl.E_OPERATION_TIMEDOUT:
+            errmsg = 'timeout reached.'
+        else:
+            errmsg = '[ERROR] ' + str(pycurl.error(e))
+        log.info(errmsg)
+        if fd is not None:
+            fd.close()
+        return -1, errmsg
+    except Exception as e:
+        errmsg = '[ERROR] ' + str(e)
+        if fd is not None:
+            fd.close()
+        return -1, errmsg
+        
+    if status_code == 200 and data is not None:
+        return status_code, data.getvalue().decode('utf-8')
+    else:
+        return status_code, None
+
+
 def main():
     global include_list
     global exclude_list
@@ -237,7 +331,8 @@ def main():
     workdir = outdir + '/../tmp/'
     contentdir = os.path.join(workdir, destinationpath)
     sourcedir = os.path.join('/srv/obs/repos/' + sourceproject.replace(':', ':/'), repository)
-
+    origindir = os.getcwd()
+    
     try:
         os.makedirs(workdir, mode=0o775)
         os.chdir(workdir)
@@ -271,6 +366,25 @@ def main():
             log.error(f"Error while copying content to {contentdir}")
             exit(1)
             
+        ### download extra package URLs, if present
+        if extrapackages:
+            log.info(f"Downloading files from manifest: {extrapackages}")
+            extrapath = os.path.join(contentdir, 'extrapackages')
+            os.makedirs(extrapath, mode=0o775)
+            with open(os.path.join(origindir, extrapackages), 'r') as f:
+                url_list = f.readlines()
+            if url_list:
+                log.info(f"Total URLs to download: {len(url_list)}")
+                for u in url_list:
+                    u = u.replace('\n','')
+                    log.info(f"Downloading file {u}")
+                    status, data = download_url(urllib.parse.quote(u, safe=':/'), filename=os.path.join(extrapath, os.path.basename(u)), force=True)
+                    if status == 200:
+                        break
+                    else:
+                        log.error('===> error downloading file %s (%s) : ' % (u, data))
+                        exit(1)
+                                  
         ### create exclusion lists
         if keeplatest:
             include_list, exclude_list = create_exclude_list(contentdir)
@@ -278,7 +392,7 @@ def main():
                 run_cmd(["find " + contentdir +  " -type f -name " + item + " -delete"])
             run_cmd(["rm -rf repodata"], contentdir)
             run_cmd(["/usr/bin/createrepo " + contentdir + " 2>&1"], contentdir)
-                           
+    
         ### create archive
         os.chdir(workdir)
         with tarfile.open(out_file, 'w:' + compression) as tar_handle:
@@ -286,21 +400,21 @@ def main():
 
         log.info(f"Created archive at {tar_handle.name}")
         tar_handle.close()    
-        
                 
-        try:
-            run_cmd(["mkdir -p update-archives"], '/srv/obs/repos')
-            run_cmd(["cp  -av " + out_file + " .",], '/srv/obs/repos/update-archives/')
-            run_cmd(["cp  -av " + os.path.join(contentdir, basename + '.changelog') + " .",], '/srv/obs/repos/update-archives/')
-        except CalledProcessError:
-            log.error(f"Error while copying tarfile to repo")
-            exit(1)
+        if publish_url:
+            try:
+                run_cmd(["mkdir -p update-archives"], '/srv/obs/repos')
+                run_cmd(["cp -av " + out_file + " .",], '/srv/obs/repos/update-archives/')
+                run_cmd(["cp -av " + os.path.join(contentdir, basename + '.changelog') + " .",], '/srv/obs/repos/update-archives/')
+            except CalledProcessError:
+                log.error(f"Error while copying tarfile to repo")
+                exit(1)
 
-        try:            
-            run_cmd(['/usr/bin/rsync -ar0 --timeout 7200 /srv/obs/repos/update-archives/ ' + publish_url + '/'], '.')
-        except CalledProcessError:
-            log.error(f"Error while syncing files to {publish_url}")
-            exit(1)
+            try:            
+                run_cmd(['/usr/bin/rsync -ar0 --timeout 7200 /srv/obs/repos/update-archives/ ' + publish_url + '/'], '.')
+            except CalledProcessError:
+                log.error(f"Error while syncing files to {publish_url}")
+                exit(1)
         
     except Exception as e:
         log.error(f"Error while trying to create archive: {e}")
