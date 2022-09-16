@@ -3,6 +3,8 @@
 `obs-service-publish_tar` will create a `archive.tar[.<tar compression>]` archive
 containing the `published repository`. The archive is generated in the rpm package directory.
 
+This can be useful if you need to package and distribute a snapshot of a project's packages in a ready-to-deploy archive.
+
 ## Usage
 
 Place the `publish_tar` and `publish_tar.service` files in /usr/lib/obs/service.
@@ -32,17 +34,15 @@ Clicking on "trigger services" should do these steps, in order:
 
 * gather the complete published repository for the project indicated in "sourceproject" for the repository indicated in "repository" (except the src and repocache directories)
 
-* compress the contents into a new archive named in "archive", with compression type defined in "compression". A variable of %d will expand to "YYYY-MM-DD".
+* compress the contents into a new archive named in "archive", with compression type defined in "compression". A variable of %d will expand to "YYYY-MM-DD". The contents will be under the path defined by "destinationpath" inside the archive (e.g. everything under /srv/www/updates in this example)
 
-* the contents will be under the path defined by "destinationpath" inside the archive (e.g. everything under /srv/www/updates in this example)
-
-* if "changesgenerate" is set to "enable", go around all the packages in the project indicated, look for .changes files and concatenate them into a global changelog. The changelog will have the same name as the archive, but with a ".changelog" extension. This uses the OBS API server, user and password indicated in the corresponding parameters.
+* if "changesgenerate" is set to "enable", go around all the packages in the project indicated, look for the corresponding ".changes" file and concatenate them into a global changelog. The changelog will have the same name as the archive, but with a ".changelog" extension. This uses the OBS API server, user and password indicated in the corresponding parameters.
 
 * if a download manifest is specified with "extrapackages", these URLs will be downloaded and included inside a directory also named "extrapackages" at the destination path inside the archive. This should point to simple text file, with one URL on each line. If the downloaded files are RPM files, they'll be included in the repodata. Self-signed certificates are ignored by default.
 
-* if "keeplatest" is set to "enable", an exclusion list will be generated before creating the final tarball, so only the LATEST VERSION of each package is included. The metadata is not regenerated, though. This is useful when inheriting packages via _aggregate, as it might bring dozens of versions of the same package. This also excludes drpm (delta RPMs) and src (source RPMs) from the tarball.
+* if "keeplatest" is set to "enable", an exclusion list will be generated before creating the final tarball, so only the LATEST VERSION of each package is included. The metadata will be regenerated at the end of the process. This is useful when inheriting packages via _aggregate, as it might bring multiple versions of the same package. This also excludes drpm (delta RPMs) and src (source RPMs) from the final archive.
 
-* finally, it'll publish the archive to the RSYNC server indicated in "publish_url". By default we do not erase previous archives. If you don't specify the "publish_url", it'll just create the tarball in the current package directory.
+* finally, it'll publish the archive to the RSYNC server indicated in "publish_url", if present. If an archive already exists with the same name, it'll be overwritten. If you don't specify the "publish_url", it'll just create the tarball in the current package directory. Currently this option uses only RSYNC URLs, like "rsync://myreposerver/reposync/archives", so the corresponding RSYNC module must be configured first at the destination server.
 
 
 ## License
