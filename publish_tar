@@ -221,12 +221,12 @@ def download_extrapackages(manifest):
 
 def generate_changelog(project):
     packages = get_packages(project)
-    log.info(f"pacotes: {packages}")
+    log.info(f"packages: {packages}")
     
     changelog = ""
     for f in packages:
         files = get_filelist(project, f)
-        log.info(f"arquivos para pacote {f}: {files}")
+        log.info(f"files for package {f}: {files}")
         for g in files:
             if ".changes" in g:
                 filecontent = get_file(project, f, g)
