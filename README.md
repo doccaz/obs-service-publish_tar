@@ -42,7 +42,7 @@ Clicking on "trigger services" should do these steps, in order:
 
 * if "keeplatest" is set to "enable", an exclusion list will be generated before creating the final tarball, so only the LATEST VERSION of each package is included. The metadata will be regenerated at the end of the process. This is useful when inheriting packages via _aggregate, as it might bring multiple versions of the same package. This also excludes drpm (delta RPMs) and src (source RPMs) from the final archive.
 
-* finally, it'll publish the archive to the RSYNC server indicated in "publish_url", if present. If an archive already exists with the same name, it'll be overwritten. If you don't specify the "publish_url", it'll just create the tarball in the current package directory. Currently this option uses only RSYNC URLs, like "rsync://myreposerver/reposync/archives", so the corresponding RSYNC module must be configured first at the destination server.
+* finally, it'll publish the archive to the RSYNC server indicated in "publish_url", if present. If an archive already exists with the same name, it'll be overwritten. If you don't specify the "publish_url", it'll just create the tarball in the current package directory. Currently this option uses only RSYNC URLs, like "rsync://myreposerver/reposync/archives", so the corresponding RSYNC module must be configured first at the destination server. This is intended for private OBS installations only.
 
 
 ## License
