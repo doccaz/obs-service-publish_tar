@@ -32,6 +32,7 @@ from subprocess import CalledProcessError
 import packaging.version as v
 import pycurl
 import urllib.parse
+import hashlib
 from io import BytesIO
 
 
@@ -215,9 +216,6 @@ def get_file(project_name, package_name, file_name):
         raise ConnectionAbortedError('error received from OBS API server: ' + str(r.status))
     return filecontents.decode('utf-8')
 
-def download_extrapackages(manifest):
-    
-    return
 
 def generate_changelog(project):
     packages = get_packages(project)
@@ -235,6 +233,17 @@ def generate_changelog(project):
                 changelog += f"{filecontent}"
                 
     return changelog
+
+def calculate_sha1sum(filename):
+
+    sha1sum = hashlib.sha1()
+    with open(filename, 'rb') as source:
+        block = source.read(2**16)
+        while len(block) != 0:
+            sha1sum.update(block)
+            block = source.read(2**16)
+
+    return sha1sum.hexdigest()
 
 
 def download_url(url, filename=None, spider=False, force=False):
@@ -383,6 +392,19 @@ def main():
                     if status != 200:
                         log.error('===> error downloading file %s (%s) : ' % (u, data))
                         exit(1)
+                    else:
+                        if changes_generate:
+                            # update project changelog
+                            changelog = f"\n\n\n*=*=*=*=*=*=*=*=*=*=*=*[ changelog: {os.path.basename(u)} ]*=*=*=*=*=*=*=*=*=*=*=*\n\n"
+                            changelog += f"URL: {u}\n"
+                            changelog += f"SHA1SUM: {calculate_sha1sum(os.path.join(extrapath, os.path.basename(u)))}\n"
+                            with open(os.path.join(contentdir, basename + '.changelog'), 'a') as f:
+                                f.write(changelog)
+                            f.close()
+
+                            with open(os.path.join(outdir, basename + '.changelog'), 'a') as f:
+                                f.write(changelog)
+                            f.close()
                                   
         ### create exclusion lists
         if keeplatest:
