@@ -372,16 +372,15 @@ def main():
             extrapath = os.path.join(contentdir, 'extrapackages')
             os.makedirs(extrapath, mode=0o775)
             with open(os.path.join(origindir, extrapackages), 'r') as f:
-                url_list = f.readlines()
+                url_list = f.read().splitlines()
+            while("" in url_list):
+                url_list.remove("")
             if url_list:
                 log.info(f"Total URLs to download: {len(url_list)}")
                 for u in url_list:
-                    u = u.replace('\n','')
                     log.info(f"Downloading file {u}")
                     status, data = download_url(urllib.parse.quote(u, safe=':/'), filename=os.path.join(extrapath, os.path.basename(u)), force=True)
-                    if status == 200:
-                        break
-                    else:
+                    if status != 200:
                         log.error('===> error downloading file %s (%s) : ' % (u, data))
                         exit(1)
                                   
