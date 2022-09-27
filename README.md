@@ -44,6 +44,15 @@ Clicking on "trigger services" should do these steps, in order:
 
 * finally, it'll publish the archive to the RSYNC server indicated in "publish_url", if present. If an archive already exists with the same name, it'll be overwritten. If you don't specify the "publish_url", it'll just create the tarball in the current package directory. Currently this option uses only RSYNC URLs, like "rsync://myreposerver/reposync/archives", so the corresponding RSYNC module must be configured first at the destination server. This is intended for private OBS installations only.
 
+A publish URL may also be defined in the project config, in this format:
+
+```
+%define publish_url rsync://myserver/myrsyncmodule/mydestdir
+```
+
+Note that the _service parameter takes precedence, if present.
+
+
 
 ## License
 

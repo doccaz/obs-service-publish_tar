@@ -68,6 +68,8 @@ parser.add_argument("--obs_password")
 parser.add_argument("--keeplatest", default="disable")
 parser.add_argument("--extrapackages")
 
+currentproject = os.getenv('OBS_SERVICE_PROJECT')
+
 args = parser.parse_args()
 
 destinationpath = args.destinationpath.lstrip('/')
@@ -169,6 +171,26 @@ def run_cmd(cmd, dir='.'):
             log.info(error)
         os.chdir(cwd)
         raise
+
+def get_publish_url_from_project(project_name):
+    try:
+        log.info(f'Fetching project config for {project_name}')
+        headers = urllib3.make_headers(basic_auth=obs_user + ':' + obs_password)
+        r = http.request('GET', 'https://' + obs_server + '/source/' + project_name + '/_config', headers=headers)
+    except Exception as e:
+            raise ConnectionAbortedError('Error connecting to OBS API: ' + str(e))
+
+    prjconf = None
+    if r.status == 200:
+        prjconf = r.data.decode('utf8')
+        log.info(f'response from server: {prjconf}')
+        
+    if prjconf:
+        regex = r"^%define\s+publish_url\s+(.*$)"
+        matches = re.search(regex, prjconf,  re.MULTILINE)
+        return matches.group(1)
+    
+    return None
     
 def get_packages(project_name):
     try:
@@ -328,15 +350,24 @@ def download_url(url, filename=None, spider=False, force=False):
 def main():
     global include_list
     global exclude_list
+    global publish_url
     
     # urllib object
     urllib3.disable_warnings()
     
     log.info(f"Running OBS Source Service: {app_name}")
-
+    log.info(f"Current project is: {currentproject}")
     log.info(f"Destination path: {destinationpath}, outdir: {outdir}")
     log.info(f"Source project: {sourceproject}, generate changes: {changes_generate}")
     log.info(f"Repository: {repository}")
+    
+    # try to fetch the publish URL from the project config if it's not defined in the _service
+    if publish_url:
+        log.info(f"Publish URL is: {publish_url}")
+    else:
+        publish_url = get_publish_url_from_project(currentproject)
+        log.info(f"Publish URL set via project config:")
+        
     workdir = outdir + '/../tmp/'
     contentdir = os.path.join(workdir, destinationpath)
     sourcedir = os.path.join('/srv/obs/repos/' + sourceproject.replace(':', ':/'), repository)
@@ -421,10 +452,11 @@ def main():
 
         log.info(f"Created archive at {tar_handle.name}")
         tar_handle.close()    
-                
+                 
         if publish_url:
             try:
                 run_cmd(["mkdir -p update-archives"], '/srv/obs/repos')
+                run_cmd(["rm -f /srv/obs/repos/update-archives/*"], '.')
                 run_cmd(["cp -av " + out_file + " .",], '/srv/obs/repos/update-archives/')
                 run_cmd(["cp -av " + os.path.join(contentdir, basename + '.changelog') + " .",], '/srv/obs/repos/update-archives/')
             except CalledProcessError:
