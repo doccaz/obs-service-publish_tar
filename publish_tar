@@ -164,7 +164,7 @@ def run_cmd(cmd, dir='.'):
         if output:
             log.info(output)
         os.chdir(cwd)
-
+        return output
     except CalledProcessError as e:
         error = e.output.decode("utf-8").strip()
         if error:
@@ -253,6 +253,20 @@ def generate_changelog(project):
                 header = f"\n\n\n*=*=*=*=*=*=*=*=*=*=*=*[ changelog: {f} ]*=*=*=*=*=*=*=*=*=*=*=*\n\n"
                 changelog += header
                 changelog += f"{filecontent}"
+                
+    return changelog
+
+def generate_changelog_from_repo(repo_dir):
+    packages = glob.glob(repo_dir + '/**/*rpm')
+    log.info(f"packages: {packages}")
+    
+    changelog = ""
+    for f in packages:
+        log.info(f"processing package {f}:")
+        header = f"\n\n\n*=*=*=*=*=*=*=*=*=*=*=*[ changelog: {os.path.basename(f)} ]*=*=*=*=*=*=*=*=*=*=*=*\n\n"
+        changelog += header
+        output=run_cmd(f"rpm -qp --changelog {f}")
+        changelog += f"{output}"
                 
     return changelog
 
@@ -384,19 +398,7 @@ def main():
         log.info(f"Creating archive as {out_file}, compression is {compression}")
         log.info(f"Files will be taken from {workdir}")
         
-        ### generate the changelog
-        if changes_generate:
-            basename = archive.split('.')[0]
-            log.info(f"Creating project changelog")
-            changelog = generate_changelog(sourceproject)
-            with open(os.path.join(contentdir, basename + '.changelog'), 'w') as f:
-                f.write(changelog)
-            f.close()
-            
-            with open(os.path.join(outdir, basename + '.changelog'), 'w') as f:
-                f.write(changelog)
-            f.close()
-        
+
         try:
             if keeplatest:
                 run_cmd(["/bin/cp -av " + sourcedir + "/{noarch,x86_64} ."], contentdir)
@@ -406,6 +408,9 @@ def main():
             log.error(f"Error while copying content to {contentdir}")
             exit(1)
             
+        ### define basename to be used everywhere else
+        basename = archive.split('.')[0]
+         
         ### download extra package URLs, if present
         if extrapackages:
             log.info(f"Downloading files from manifest: {extrapackages}")
@@ -445,6 +450,19 @@ def main():
             run_cmd(["rm -rf repodata"], contentdir)
             run_cmd(["/usr/bin/createrepo " + contentdir + " 2>&1"], contentdir)
     
+        ### generate the changelog
+        if changes_generate: 
+            log.info(f"Creating project changelog")
+            #changelog = generate_changelog(sourceproject)
+            changelog = generate_changelog_from_repo(destinationpath)
+            with open(os.path.join(contentdir, basename + '.changelog'), 'w') as f:
+                f.write(changelog)
+            f.close()
+            
+            with open(os.path.join(outdir, basename + '.changelog'), 'w') as f:
+                f.write(changelog)
+            f.close()
+        
         ### create archive
         os.chdir(workdir)
         with tarfile.open(out_file, 'w:' + compression) as tar_handle:
