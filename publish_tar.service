@@ -29,6 +29,9 @@
 	<parameter name="extrapackages">
 		<description>Specify a file with a list of URLs for external packages to be added to the final archive.</description>
 	</parameter>
+	<parameter name="maxversions">
+		<description>Specify a file with a list containing package names and maximum allowed versions to be added to the final archive.</description>
+	</parameter>	
 	<parameter name="sourceproject">
 		<description>Specify the source project. Example: openSUSE:Leap:15.3 </description>
 		<required/>
