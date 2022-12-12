@@ -416,9 +416,17 @@ def main():
         
         try:
             if keeplatest:
-                run_cmd(["/bin/cp -av " + sourcedir + "/{noarch,x86_64} ."], contentdir)
+                if os.path.exists(sourcedir + "/noarch"):
+                    run_cmd(["/bin/cp -av " + sourcedir + "/noarch ."], contentdir)
+                if os.path.exists(sourcedir + "/x86_64"):
+                    run_cmd(["/bin/cp -av " + sourcedir + "/x86_64 ."], contentdir)                    
             else:
-                run_cmd(["/bin/cp -av " + sourcedir + "/{noarch,x86_64,repodata} ."], contentdir)
+                if os.path.exists(sourcedir + "/noarch"):
+                    run_cmd(["/bin/cp -av " + sourcedir + "/noarch ."], contentdir)
+                if os.path.exists(sourcedir + "/x86_64"):
+                    run_cmd(["/bin/cp -av " + sourcedir + "/x86_64 ."], contentdir)
+                run_cmd(["/bin/cp -av " + sourcedir + "/repodata ."], contentdir)
+                
         except CalledProcessError:
             log.error(f"Error while copying content to {contentdir}")
             exit(1)
