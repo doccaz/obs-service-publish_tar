@@ -29,7 +29,6 @@ import glob
 from datetime import datetime
 from subprocess import check_output
 from subprocess import CalledProcessError
-from packaging.version import Version, parse
 from distutils.version import LooseVersion
 import pycurl
 import urllib.parse
@@ -109,7 +108,7 @@ def create_exclude_list(repopath, maxversions_dict):
 
     regex = r'(.*)-(.*)-(.*?.*)\.(noarch|x86_64|src)\.(rpm|drpm)'
 
-    files=glob.glob(repopath + '/**/*rpm')
+    files=glob.glob(os.path.join(repopath,'**/*rpm'))
     packages = [os.path.basename(x) for x in files]
     include = []
     exclude = []
@@ -121,21 +120,19 @@ def create_exclude_list(repopath, maxversions_dict):
         version = matches.group(2)
         release = matches.group(3)
         if package in versions.keys():   
-                versions[package].append(parse(version + '-' + release))
+            versions[package].append(LooseVersion(version + '-' + release))
         else:
-                versions[package] = [parse(version + '-' + release)]
+            versions[package] = [LooseVersion(version + '-' + release)]
+
         versions[package].sort(reverse=True)
     
+    log.info(f"versions = {versions}")
     ## remove any packages that have versions bigger than the ones in maxversions
                 # if any(package in s for s in include):
                 #     log.info(f'including package {item} (lower than {maxversions_dict[package]})')
                 #     include.append(item)
 
-        if package in maxversions_dict.keys() and (LooseVersion(version + '-' + release) >  LooseVersion(maxversions_dict[package])):
-            log.info(f'excluding package {package}-{version} (higher than {maxversions_dict[package]})')
-            exclude.append(item)    
  
-
     for item in packages:
         matches = re.search(regex, item)
         package = matches.group(1)
@@ -143,23 +140,31 @@ def create_exclude_list(repopath, maxversions_dict):
         release = matches.group(3)
         arch = matches.group(4)
         type = matches.group(5)
-        log.info(f"processing package {package}-{version}")
+        log.info(f"processing package {package} {version}-{release}, {maxversions_dict}")
         if '.drpm' in item or '.src.rpm' in item:
 			# print(f'excluding DRPM/SRC item: {item}')
             exclude.append(item)
-        elif item not in exclude and package in versions.keys() and parse(version + '-' + release) == versions[package][0]:
-			    # print(f'including item: {item}')
+            
+        if package in maxversions_dict.keys():
+            if LooseVersion(version + '-' + release) >  LooseVersion(maxversions_dict[package]):
+                log.info(f'excluding package {package}-{version} (higher than {maxversions_dict[package]})')
+                exclude.append(item)
+            else:
                 log.info(f'including package {item} (no restriction)')
                 include.append(item)
+#        if item not in exclude and package in versions.keys() and not any(package in s for s in include):
+        elif LooseVersion(version + '-' + release) == versions[package][0]:
+            log.info(f'including item: {item}')
+            include.append(item)
         else:
-			# print(f'excluding item: {item}')
+            log.info(f'excluding item: {item}')
             exclude.append(item)
 
     include.sort()
     exclude.sort()
-    log.info(f'----total packages: {len(packages)}')
-    log.info(f'----excluded: {len(exclude)}')
-    log.info(f'----included: {len(include)}')
+    log.info(f'----total packages: {packages} ({len(packages)} total)')
+    log.info(f'----excluded: {exclude} ({len(exclude)} total)')
+    log.info(f'----included: {include} ({len(include)} total)')
 
     return include, exclude
 
@@ -391,6 +396,8 @@ def main():
     log.info(f"Destination path: {destinationpath}, outdir: {outdir}")
     log.info(f"Source project: {sourceproject}, generate changes: {changes_generate}")
     log.info(f"Repository: {repository}")
+    log.info(f"Maxversions: {maxversions}")
+    log.info(f"Extra packages: {extrapackages}")
     
     # try to fetch the publish URL from the project config if it's not defined in the _service
     if publish_url:
@@ -440,13 +447,10 @@ def main():
             log.info(f"Loading maximum versions list: {maxversions}")
             with open(os.path.join(origindir, maxversions), 'r') as f:
                 maxtmp = f.read().splitlines()
+                while("" in maxtmp):
+                    maxtmp.remove("")
                 for l in maxtmp:
-                    if ',' not in l:
-                        maxtmp.remove(l)
-                    else:
-                        maxversions_dict[l.split(',')[0]] = l.split(',')[1]
-            log.info(f"maxversions = {maxversions_dict}")
-            log.info(f"Total items in max versions: {len(maxversions_dict)}")
+                    maxversions_dict[l.split(',')[0]] = l.split(',')[1]
                             
         ### download extra package URLs, if present
         if extrapackages:
