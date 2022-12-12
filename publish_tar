@@ -29,12 +29,12 @@ import glob
 from datetime import datetime
 from subprocess import check_output
 from subprocess import CalledProcessError
-import packaging.version as v
+from packaging.version import Version, parse
+from distutils.version import LooseVersion
 import pycurl
 import urllib.parse
 import hashlib
 from io import BytesIO
-from distutils.version import LooseVersion
 
 app_name = "obs-service-publish_tar"
 
@@ -104,6 +104,9 @@ http = urllib3.PoolManager()
 
 def create_exclude_list(repopath, maxversions_dict):
 
+    log.info(f"maxversions = {maxversions_dict}")
+    log.info(f"Total items in max versions: {len(maxversions_dict)}")
+
     regex = r'(.*)-(.*)-(.*?.*)\.(noarch|x86_64|src)\.(rpm|drpm)'
 
     files=glob.glob(repopath + '/**/*rpm')
@@ -117,12 +120,22 @@ def create_exclude_list(repopath, maxversions_dict):
         package = matches.group(1)
         version = matches.group(2)
         release = matches.group(3)
-        if package in versions.keys():
-            versions[package].append(v.parse(version + '-' + release))
+        if package in versions.keys():   
+                versions[package].append(parse(version + '-' + release))
         else:
-            versions[package] = [v.parse(version + '-' + release)]
+                versions[package] = [parse(version + '-' + release)]
         versions[package].sort(reverse=True)
     
+    ## remove any packages that have versions bigger than the ones in maxversions
+                # if any(package in s for s in include):
+                #     log.info(f'including package {item} (lower than {maxversions_dict[package]})')
+                #     include.append(item)
+
+        if package in maxversions_dict.keys() and (LooseVersion(version + '-' + release) >  LooseVersion(maxversions_dict[package])):
+            log.info(f'excluding package {package}-{version} (higher than {maxversions_dict[package]})')
+            exclude.append(item)    
+ 
+
     for item in packages:
         matches = re.search(regex, item)
         package = matches.group(1)
@@ -134,20 +147,9 @@ def create_exclude_list(repopath, maxversions_dict):
         if '.drpm' in item or '.src.rpm' in item:
 			# print(f'excluding DRPM/SRC item: {item}')
             exclude.append(item)
-        elif item not in exclude and package in versions.keys() and v.parse(version + '-' + release) == versions[package][0]:
-            ### check if the package is in the maxversions table and decide to include it or not
-            if package in maxversions_dict.keys():
-                log.info(f"found package: {package}")
-                log.info(f"version = {version}-{release}")
-                v_current = LooseVersion(version + '-' + release)
-                v_max = LooseVersion(maxversions_dict[package])
-                if v_current > v_max:
-                    log.info(f'excluding package {package}-{version} (max: {v_max})')
-                    exclude.append(item)
-                else:
-                    include.append(item)
-            else:            
+        elif item not in exclude and package in versions.keys() and parse(version + '-' + release) == versions[package][0]:
 			    # print(f'including item: {item}')
+                log.info(f'including package {item} (no restriction)')
                 include.append(item)
         else:
 			# print(f'excluding item: {item}')
@@ -430,10 +432,11 @@ def main():
             log.info(f"Loading maximum versions list: {maxversions}")
             with open(os.path.join(origindir, maxversions), 'r') as f:
                 maxtmp = f.read().splitlines()
-                while("" in maxtmp):
-                    maxtmp.remove("")
-                for m in maxtmp:
-                    maxversions_dict[m.split(',')[0]] = m.split(',')[1]
+                for l in maxtmp:
+                    if ',' not in l:
+                        maxtmp.remove(l)
+                    else:
+                        maxversions_dict[l.split(',')[0]] = l.split(',')[1]
             log.info(f"maxversions = {maxversions_dict}")
             log.info(f"Total items in max versions: {len(maxversions_dict)}")
                             
