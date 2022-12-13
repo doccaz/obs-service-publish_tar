@@ -113,7 +113,7 @@ def create_exclude_list(repopath, maxversions_dict):
     include = []
     exclude = []
     versions = {}
-    # print(f'total packages: {len(packages)}')
+
     for item in packages:
         matches = re.search(regex, item)
         package = matches.group(1)
@@ -150,18 +150,42 @@ def create_exclude_list(repopath, maxversions_dict):
                 log.info(f'excluding package {package}-{version} (higher than {maxversions_dict[package]})')
                 exclude.append(item)
             else:
-                log.info(f'including package {item} (no restriction)')
-                include.append(item)
-#        if item not in exclude and package in versions.keys() and not any(package in s for s in include):
+                # if the package is already included with another version
+                if any(package in s for s in include) and LooseVersion(version + '-' + release) <  LooseVersion(maxversions_dict[package]):
+                    log.info(f'excluding package {item} (another version already included)')
+                    exclude.append(item)
+                else:
+                    log.info(f'including package {item} (no restriction)')
+                    include.append(item)
+
         elif LooseVersion(version + '-' + release) == versions[package][0]:
             log.info(f'including item: {item}')
             include.append(item)
         else:
             log.info(f'excluding item: {item}')
             exclude.append(item)
-
-    include.sort()
-    exclude.sort()
+        
+        # sort after each run         
+        include.sort(reverse=True)
+        exclude.sort(reverse=True)
+    
+    # last pass - removing older packages
+    lastpackage=''
+    lastversion=LooseVersion('0')
+    for item in include:
+        matches = re.search(regex, item)
+        package = matches.group(1)
+        version = matches.group(2)
+        release = matches.group(3)
+        
+        if package == lastpackage and LooseVersion(version + '-' + release) < lastversion:
+            exclude.append(item)
+            include.remove(item)
+        
+        lastpackage = package
+        lastversion = LooseVersion(version + '-' + release)
+    
+    
     log.info(f'----total packages: {packages} ({len(packages)} total)')
     log.info(f'----excluded: {exclude} ({len(exclude)} total)')
     log.info(f'----included: {include} ({len(include)} total)')
