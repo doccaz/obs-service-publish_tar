@@ -29,11 +29,13 @@ import glob
 from datetime import datetime
 from subprocess import check_output
 from subprocess import CalledProcessError
+from packaging.version import parse as parseVersion
 from distutils.version import LooseVersion
 import pycurl
 import urllib.parse
 import hashlib
 from io import BytesIO
+import traceback
 
 app_name = "obs-service-publish_tar"
 
@@ -109,7 +111,17 @@ def create_exclude_list(repopath, maxversions_dict):
     regex = r'(.*)-(.*)-(.*?.*)\.(noarch|x86_64|src)\.(rpm|drpm)'
 
     files=glob.glob(os.path.join(repopath,'**/*rpm'))
+
+    # remove delta RPMs and SRCs first
+    for item in files:
+        if '.drpm' in item or '.src.rpm' in item:
+            log.info(f"deleting delta/src RPM: {item}")
+            run_cmd(["rm -f " + item])
+            files.remove(item)
+
     packages = [os.path.basename(x) for x in files]
+    packages.sort()
+
     include = []
     exclude = []
     versions = {}
@@ -119,20 +131,23 @@ def create_exclude_list(repopath, maxversions_dict):
         package = matches.group(1)
         version = matches.group(2)
         release = matches.group(3)
-        if package in versions.keys():   
-            versions[package].append(LooseVersion(version + '-' + release))
+
+        if package in versions.keys():
+            log.info(f"added extra [{version}-{release}] to package {package}")
+            versions[package].append(version + '-' + release)
+            try:
+                versions[package].sort(reverse=True, key=parseVersion)
+            except Exception as e:
+                log.info(f"exception: {e}")
+                log.info(traceback.print_tb(e.__traceback__))
+            # log.info(f"sorted: {versions[package]}")
         else:
-            versions[package] = [LooseVersion(version + '-' + release)]
+            log.info(f"added first [{version}-{release}] to package {package}")
+            versions[package] = [version + '-' + release]
 
-        versions[package].sort(reverse=True)
+    # log.info(f"versions = {versions}")
+    # log.info(f"PACKAGES = {packages}")
     
-    log.info(f"versions = {versions}")
-    ## remove any packages that have versions bigger than the ones in maxversions
-                # if any(package in s for s in include):
-                #     log.info(f'including package {item} (lower than {maxversions_dict[package]})')
-                #     include.append(item)
-
- 
     for item in packages:
         matches = re.search(regex, item)
         package = matches.group(1)
@@ -140,56 +155,31 @@ def create_exclude_list(repopath, maxversions_dict):
         release = matches.group(3)
         arch = matches.group(4)
         type = matches.group(5)
-        log.info(f"processing package {package} {version}-{release}, {maxversions_dict}")
-        if '.drpm' in item or '.src.rpm' in item:
-			# print(f'excluding DRPM/SRC item: {item}')
-            exclude.append(item)
-            
+        # log.info(f"processing package [{package}] [{version}-{release}], {maxversions_dict}, include: {include}, exclude: {exclude}")
         if package in maxversions_dict.keys():
-            if LooseVersion(version + '-' + release) >  LooseVersion(maxversions_dict[package]):
-                log.info(f'excluding package {package}-{version} (higher than {maxversions_dict[package]})')
+            if LooseVersion(version + '-' + release) != LooseVersion(maxversions_dict[package]):
+                log.info(f'excluding package {package}-{version}-{release} (different than {maxversions_dict[package]})')
                 exclude.append(item)
+                # log.info(f'excluded')
             else:
-                # if the package is already included with another version
-                if any(package in s for s in include) and LooseVersion(version + '-' + release) <  LooseVersion(maxversions_dict[package]):
-                    log.info(f'excluding package {item} (another version already included)')
-                    exclude.append(item)
-                else:
-                    log.info(f'including package {item} (no restriction)')
-                    include.append(item)
-
-        elif LooseVersion(version + '-' + release) == versions[package][0]:
+                log.info(f'including package {item} (no restriction)')
+                include.append(item)
+                # log.info(f'included')
+        elif parseVersion(version + '-' + release) == parseVersion(versions[package][0]):
             log.info(f'including item: {item}')
             include.append(item)
+            # log.info(f'included')
         else:
             log.info(f'excluding item: {item}')
             exclude.append(item)
-        
-        # sort after each run         
-        include.sort(reverse=True)
-        exclude.sort(reverse=True)
+            # log.info(f'excluded')
     
-    # last pass - removing older packages
-    lastpackage=''
-    lastversion=LooseVersion('0')
-    for item in include:
-        matches = re.search(regex, item)
-        package = matches.group(1)
-        version = matches.group(2)
-        release = matches.group(3)
-        
-        if package == lastpackage and LooseVersion(version + '-' + release) < lastversion:
-            exclude.append(item)
-            include.remove(item)
-        
-        lastpackage = package
-        lastversion = LooseVersion(version + '-' + release)
-    
-    
+    include.sort(reverse=True)
+    exclude.sort(reverse=True)
+
     log.info(f'----total packages: {packages} ({len(packages)} total)')
     log.info(f'----excluded: {exclude} ({len(exclude)} total)')
     log.info(f'----included: {include} ({len(include)} total)')
-
     return include, exclude
 
 ### reset uid/gid to 0/0 (root).
@@ -303,12 +293,12 @@ def generate_changelog(project):
     return changelog
 
 def generate_changelog_from_repo(repo_dir):
-    packages = glob.glob(repo_dir + '/**/*rpm')
-    log.info(f"packages: {packages}")
+    packages = glob.glob(repo_dir + '/**/*.rpm')
+    # log.info(f"packages: {packages}")
     
     changelog = ""
     for f in packages:
-        log.info(f"processing package {f}:")
+        log.info(f"changelog processing package {f}:")
         header = f"\n\n\n*=*=*=*=*=*=*=*=*=*=*=*[ changelog: {os.path.basename(f)} ]*=*=*=*=*=*=*=*=*=*=*=*\n\n"
         changelog += header
         output=run_cmd(f"rpm -qp --changelog {f}")
@@ -499,11 +489,17 @@ def main():
         ### create exclusion lists
         if keeplatest:
             include_list, exclude_list = create_exclude_list(contentdir, maxversions_dict)
+            run_cmd(["rm -rf repodata"], contentdir)
             for item in exclude_list:
-                run_cmd(["find " + contentdir +  " -type f -name " + item + " -delete"])
+                output=run_cmd([f"find . -name {item} -delete"], contentdir)
+                # log.info(output)
+            run_cmd(["find . -name *drpm -delete"], contentdir)
             run_cmd(["rm -rf repodata"], contentdir)
             run_cmd(["/usr/bin/createrepo " + contentdir + " 2>&1"], contentdir)
-    
+        #     log.info("------start---------")
+        #     run_cmd(["find " + contentdir])
+        #     log.info("------end---------")
+
         ### generate the changelog
         if changes_generate: 
             log.info(f"Creating project changelog")
