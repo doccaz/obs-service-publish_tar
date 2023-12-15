@@ -108,7 +108,7 @@ def create_exclude_list(repopath, maxversions_dict):
     log.info(f"maxversions = {maxversions_dict}")
     log.info(f"Total items in max versions: {len(maxversions_dict)}")
 
-    regex = r'(.*)-(.*)-(.*?.*)\.(noarch|x86_64|src)\.(rpm|drpm)'
+    regex = r'(.*)-(.*)-(.*?.*)\.(noarch|x86_64|i586|src)\.(rpm|drpm)'
 
     files=glob.glob(os.path.join(repopath,'**/*rpm'))
 
@@ -441,11 +441,15 @@ def main():
                     run_cmd(["/bin/cp -av " + sourcedir + "/noarch ."], contentdir)
                 if os.path.exists(sourcedir + "/x86_64"):
                     run_cmd(["/bin/cp -av " + sourcedir + "/x86_64 ."], contentdir)                    
+                if os.path.exists(sourcedir + "/i586"):
+                    run_cmd(["/bin/cp -av " + sourcedir + "/i586 ."], contentdir)                    
             else:
                 if os.path.exists(sourcedir + "/noarch"):
                     run_cmd(["/bin/cp -av " + sourcedir + "/noarch ."], contentdir)
                 if os.path.exists(sourcedir + "/x86_64"):
                     run_cmd(["/bin/cp -av " + sourcedir + "/x86_64 ."], contentdir)
+                if os.path.exists(sourcedir + "/i586"):
+                    run_cmd(["/bin/cp -av " + sourcedir + "/i586 ."], contentdir)
                 run_cmd(["/bin/cp -av " + sourcedir + "/repodata ."], contentdir)
                 
         except CalledProcessError:
@@ -499,6 +503,7 @@ def main():
         #     log.info("------start---------")
         #     run_cmd(["find " + contentdir])
         #     log.info("------end---------")
+        run_cmd(["/usr/bin/createrepo " + contentdir + " 2>&1"], contentdir)
 
         ### generate the changelog
         if changes_generate: 
