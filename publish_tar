@@ -36,6 +36,7 @@ import urllib.parse
 import hashlib
 from io import BytesIO
 import traceback
+from pathlib import Path
 
 app_name = "obs-service-publish_tar"
 
@@ -517,7 +518,18 @@ def main():
             with open(os.path.join(outdir, basename + '.changelog'), 'w') as f:
                 f.write(changelog)
             f.close()
-        
+
+	### create sha1sum for all files
+        log.info("Creating sha1sum")
+        os.chdir(destinationpath)
+        files = [f for f in Path(".").rglob("*") if f.is_file()]
+        sha1 = []
+        for f in files:
+            sha1.append(calculate_sha1sum(f) + '  ' + str(f) + '\n')
+
+        with open('CHECKSUMS', 'w') as file:
+            file.writelines(sha1)
+ 
         ### create archive
         os.chdir(workdir)
         with tarfile.open(out_file, 'w:' + compression) as tar_handle:
@@ -525,6 +537,8 @@ def main():
 
         log.info(f"Created archive at {tar_handle.name}")
         tar_handle.close()    
+        with open(out_file + '.sha1sum', 'w') as f:
+            f.write(calculate_sha1sum(out_file) + '  ' + os.path.basename(out_file) + '\n')
                  
         if publish_url:
             try:
