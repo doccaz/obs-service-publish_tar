@@ -62,6 +62,8 @@ A publish URL may also be defined in the project config, in this format:
 Note that the _service parameter takes precedence, if present.
 
 
+A CHECKSUMS file is generated in the standard "sha1sum" format. This file is present on the base directory for each generated tarball, and can be used to verify the integrity of the individual files after the archive is uncompressed.
+
 
 ## License
 
